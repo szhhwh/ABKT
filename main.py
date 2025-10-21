@@ -65,6 +65,16 @@ def parse_args():
                         help='The working device of pytorch, '
                              'Default is "cpu", choose from ["cpu","cuda:0","cuda:1",...] ')
 
+    # cross-validation options
+    parser.add_argument('--use_cv', action='store_true',
+                        help='Enable K-fold cross validation data split at preprocessing stage.')
+    parser.add_argument('--cv_n_folds', type=int, default=5,
+                        help='Number of folds for K-fold. Default 5.')
+    parser.add_argument('--cv_fold_id', type=int, default=0,
+                        help='Which fold to use as test fold [0..n_folds-1].')
+    parser.add_argument('--cv_seed', type=int, default=42,
+                        help='Random seed for user shuffling in K-fold.')
+
     return parser.parse_args()
 
 
@@ -74,7 +84,12 @@ def main():
     """
     args = parse_args()
     print("Checking the per-trained knowledge model...")
-    KM_path = './Models/'+str(args.dataset)+'-'+str(args.type)+'/CMF-k-'+str(args.KM_k)+'-'+str(args.KM_guess)+'-earlystop'
+    if args.use_cv:
+        KM_path = './Models/{ds}-{tp}/folds-{nf}/seed-{sd}/fold-{fi}/CMF-k-{k}-{g}-earlystop'.format(
+            ds=str(args.dataset), tp=str(args.type), nf=args.cv_n_folds, sd=args.cv_seed,
+            fi=args.cv_fold_id, k=str(args.KM_k), g=str(args.KM_guess))
+    else:
+        KM_path = './Models/'+str(args.dataset)+'-'+str(args.type)+'/CMF-k-'+str(args.KM_k)+'-'+str(args.KM_guess)+'-earlystop'
     if os.access(KM_path, os.F_OK) and args.use_pertrained_model:
         print("per-trained knowledge model is existent...")
     else:
@@ -86,6 +101,10 @@ def main():
             k_hidden_size=args.KM_k,
             guess=args.KM_guess,
             device=args.device,
+            use_kfold=args.use_cv,
+            n_folds=args.cv_n_folds,
+            fold_id=args.cv_fold_id,
+            fold_seed=args.cv_seed,
         )
         cmf.train()
         cmf.log_result()
@@ -101,6 +120,10 @@ def main():
         pretrain_clip=args.pretrain_clip,
         combine=args.joint_model,
         device=args.device,
+        use_kfold=args.use_cv,
+        n_folds=args.cv_n_folds,
+        fold_id=args.cv_fold_id,
+        fold_seed=args.cv_seed,
     )
     gmf.train()
     gmf.log_result()

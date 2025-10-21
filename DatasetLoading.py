@@ -1,5 +1,6 @@
 import pandas as pd
 import math
+import numpy as np
 
 def load_dataset(dataset,type,min_length):
     if dataset == 'ASSISTment2009':
@@ -155,6 +156,71 @@ def get_split_sequences(dataset, type, min_length):
         for i in range(test_item_sequence.__len__()):
             test_triplet.append([user,test_item_sequence[i],test_correct_sequence[i]])
     return user_num,item_num,skill_num,record_num,train_sequences,test_triplet,Q_matrix
+
+
+def get_kfold_sequences(dataset, type, min_length, n_splits=5, fold_id=0, seed=42):
+    """
+    以用户为单位进行K折划分：指定fold作为测试集，其余作为训练集；
+    - 训练集：每个训练用户的序列去掉最后一次（与原有逻辑一致）
+    - 测试集：仅包含测试用户序列的最后一次三元组（user, item, correct）
+
+    (user_num, item_num, skill_num, record_num, train_sequences, test_triplet, Q_matrix)
+    """
+    [user_list, item_list, correct_list, Q_matrix] = load_dataset(dataset, type, min_length)
+    user_num = max(user_list) + 1
+    item_num = max(item_list) + 1
+    skill_num = max([max(i) for i in Q_matrix]) + 1
+    record_num = user_list.__len__()
+
+    # 按用户聚合序列
+    all_sequences = {}
+    for i in range(len(user_list)):
+        u = user_list[i]
+        it = item_list[i]
+        cor = correct_list[i]
+        if u in all_sequences:
+            all_sequences[u][0].append(it)
+            all_sequences[u][1].append(cor)
+        else:
+            all_sequences[u] = [[it], [cor]]
+
+    unique_users = np.array(sorted(all_sequences.keys()))
+    assert n_splits >= 2, "n_splits 至少为 2"
+    assert 0 <= fold_id < n_splits, "fold_id 必须在 [0, n_splits) 内"
+
+    # 可复现的用户打乱与均匀分块
+    rng = np.random.RandomState(seed)
+    perm_users = rng.permutation(unique_users)
+    fold_sizes = np.full(n_splits, len(perm_users) // n_splits, dtype=int)
+    fold_sizes[: len(perm_users) % n_splits] += 1
+    indices = np.cumsum(fold_sizes)
+    starts = np.concatenate(([0], indices[:-1]))
+    folds = [perm_users[s:e] for s, e in zip(starts, indices)]
+
+    test_users = set(folds[fold_id].tolist())
+    train_users = set(unique_users.tolist()) - test_users
+
+    train_sequences = {}
+    test_triplet = []
+
+    # 构建训练与测试
+    for u in train_users:
+        items = all_sequences[u][0]
+        labels = all_sequences[u][1]
+        seq_len = len(items)
+        train_len = seq_len - 1
+        train_sequences[u] = [[items[0:train_len]], [labels[0:train_len]]]
+
+    for u in test_users:
+        items = all_sequences[u][0]
+        labels = all_sequences[u][1]
+        seq_len = len(items)
+        train_len = seq_len - 1
+        # 仅最后一次进入测试三元组（保持与原有评估一致）
+        for idx in range(train_len, seq_len):
+            test_triplet.append([u, items[idx], labels[idx]])
+
+    return user_num, item_num, skill_num, record_num, train_sequences, test_triplet, Q_matrix
 
 
 

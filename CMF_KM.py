@@ -1,5 +1,5 @@
 import torch
-from DatasetLoading import get_split_sequences
+from DatasetLoading import get_split_sequences, get_kfold_sequences
 import pickle
 import os
 import numpy as np
@@ -20,6 +20,10 @@ class CMF:
                  k_hidden_size = 5,
                  device = 'cpu',
                  guess = 0.25,
+                 use_kfold=False,
+                 n_folds=5,
+                 fold_id=0,
+                 fold_seed=42,
                  ):
 
         self.dataset = dataset
@@ -30,8 +34,16 @@ class CMF:
         self.m_lr = m_lr
         self.device = device
         self.guess = guess
+        self.use_kfold = use_kfold
+        self.n_folds = n_folds
+        self.fold_id = fold_id
+        self.fold_seed = fold_seed
 
-        save_dataset_path = './ProcessedData/' + dataset + '-' + type + '-' + str(min_length) +'-squence'
+        if self.use_kfold:
+            save_dataset_path = './ProcessedData/{ds}-{tp}-{ml}-squence/folds-{nf}/seed-{sd}/fold-{fi}'.format(
+                ds=dataset, tp=type, ml=str(min_length), nf=self.n_folds, sd=self.fold_seed, fi=self.fold_id)
+        else:
+            save_dataset_path = './ProcessedData/' + dataset + '-' + type + '-' + str(min_length) +'-squence'
         if os.access(save_dataset_path, os.F_OK):
             print("Processed data is existent...")
             print('Loading...')
@@ -41,11 +53,18 @@ class CMF:
             save_dataset_file.close()
         else:
             print("Processed data is not existent...")
-            self.user_num,self.item_num,self.skill_num,self.record_num,train_sequences,test_triplet,Q_matrix_s = \
-                get_split_sequences(dataset, type, min_length)
+            if self.use_kfold:
+                self.user_num,self.item_num,self.skill_num,self.record_num,train_sequences,test_triplet,Q_matrix_s = \
+                    get_kfold_sequences(dataset, type, min_length, n_splits=self.n_folds, fold_id=self.fold_id, seed=self.fold_seed)
+            else:
+                self.user_num,self.item_num,self.skill_num,self.record_num,train_sequences,test_triplet,Q_matrix_s = \
+                    get_split_sequences(dataset, type, min_length)
 
             train_test_sets = [self.user_num,self.item_num,self.skill_num,
                                self.record_num,train_sequences,test_triplet,Q_matrix_s]
+            parent_dir = os.path.dirname(save_dataset_path)
+            if parent_dir and not os.path.exists(parent_dir):
+                os.makedirs(parent_dir, exist_ok=True)
             save_dataset_file = open(save_dataset_path, 'wb')
             pickle.dump(train_test_sets, save_dataset_file)
             save_dataset_file.close()
@@ -189,7 +208,14 @@ class CMF:
 
             if AUC > self.bestAUC:
                 self.bestAUC = AUC
-                save_path_k = './Models/'+str(self.dataset)+'-'+str(self.type)+'/CMF-k-' + str(self.k_hidden_size)+ '-' + str(self.guess) + '-earlystop'
+                if self.use_kfold:
+                    save_dir = './Models/{ds}-{tp}/folds-{nf}/seed-{sd}/fold-{fi}'.format(
+                        ds=str(self.dataset), tp=str(self.type), nf=self.n_folds, sd=self.fold_seed, fi=self.fold_id)
+                else:
+                    save_dir = './Models/'+str(self.dataset)+'-'+str(self.type)
+                if not os.path.exists(save_dir):
+                    os.makedirs(save_dir, exist_ok=True)
+                save_path_k = save_dir + '/CMF-k-' + str(self.k_hidden_size)+ '-' + str(self.guess) + '-earlystop'
                 torch.save(self.K_CMF.state_dict(), save_path_k)
                 stop = 0
             if ACC > self.bestACC:
@@ -201,7 +227,14 @@ class CMF:
             print('Best ACC:', self.bestACC, '| Best AUC:', self.bestAUC)
             if stop >= self.early_stop or epoch == self.epoch-1:
                 print('*' * 20, 'stop training', '*' * 20)
-                save_path_k = './Models/'+str(self.dataset)+'-'+str(self.type)+'/CMF-k-' + str(self.k_hidden_size) + '-' + str(self.guess) + '-epoch' + str(epoch)
+                if self.use_kfold:
+                    save_dir = './Models/{ds}-{tp}/folds-{nf}/seed-{sd}/fold-{fi}'.format(
+                        ds=str(self.dataset), tp=str(self.type), nf=self.n_folds, sd=self.fold_seed, fi=self.fold_id)
+                else:
+                    save_dir = './Models/'+str(self.dataset)+'-'+str(self.type)
+                if not os.path.exists(save_dir):
+                    os.makedirs(save_dir, exist_ok=True)
+                save_path_k = save_dir + '/CMF-k-' + str(self.k_hidden_size) + '-' + str(self.guess) + '-epoch' + str(epoch)
                 torch.save(self.K_CMF.state_dict(), save_path_k)
                 break
 

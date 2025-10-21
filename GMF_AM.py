@@ -13,7 +13,7 @@
 """
 
 import torch
-from DatasetLoading import get_split_sequences
+from DatasetLoading import get_split_sequences, get_kfold_sequences
 import pickle
 import os
 import torch.utils.data as Data
@@ -42,6 +42,10 @@ class GMF_BOOSTING:
                  GMF_layer = 1,
                  m_lambda = 0.1,
                  device = 'cpu',
+                 use_kfold=False,
+                 n_folds=5,
+                 fold_id=0,
+                 fold_seed=42,
                  ):
         self.embedding_k = embedding_k
         self.m_lr = m_lr
@@ -60,9 +64,16 @@ class GMF_BOOSTING:
         self.GMF_layer = GMF_layer
         self.m_lambda = m_lambda
         self.device = device
+        self.use_kfold = use_kfold
+        self.n_folds = n_folds
+        self.fold_id = fold_id
+        self.fold_seed = fold_seed
 
-
-        save_dataset_path = './ProcessedData/' + dataset + '-' + type + '-' + str(min_length) + '-squence'
+        if self.use_kfold:
+            save_dataset_path = './ProcessedData/{ds}-{tp}-{ml}-squence/folds-{nf}/seed-{sd}/fold-{fi}'.format(
+                ds=dataset, tp=type, ml=str(min_length), nf=self.n_folds, sd=self.fold_seed, fi=self.fold_id)
+        else:
+            save_dataset_path = './ProcessedData/' + dataset + '-' + type + '-' + str(min_length) + '-squence'
         if os.access(save_dataset_path, os.F_OK):
             print("Processed data is existent...")
             print('Loading...')
@@ -72,11 +83,18 @@ class GMF_BOOSTING:
             save_dataset_file.close()
         else:
             print("Processed data is not existent...")
-            self.user_num, self.item_num, self.skill_num, self.record_num, train_sequences, test_triplet, Q_matrix_s = \
-                get_split_sequences(dataset, type, min_length)
+            if self.use_kfold:
+                self.user_num, self.item_num, self.skill_num, self.record_num, train_sequences, test_triplet, Q_matrix_s = \
+                    get_kfold_sequences(dataset, type, min_length, n_splits=self.n_folds, fold_id=self.fold_id, seed=self.fold_seed)
+            else:
+                self.user_num, self.item_num, self.skill_num, self.record_num, train_sequences, test_triplet, Q_matrix_s = \
+                    get_split_sequences(dataset, type, min_length)
 
             train_test_sets = [self.user_num, self.item_num, self.skill_num,
                                self.record_num, train_sequences, test_triplet, Q_matrix_s]
+            parent_dir = os.path.dirname(save_dataset_path)
+            if parent_dir and not os.path.exists(parent_dir):
+                os.makedirs(parent_dir, exist_ok=True)
             save_dataset_file = open(save_dataset_path, 'wb')
             pickle.dump(train_test_sets, save_dataset_file)
             save_dataset_file.close()
@@ -124,8 +142,14 @@ class GMF_BOOSTING:
 
         print('Computing output in Pre-trained model...')
         print('Training set...')
-        # CMF_model.load_state_dict(torch.load('./Models/'+str(self.dataset)+'-'+str(self.type)+'/CMF-k-'+str(self.CMF_k)+'-'+str(self.CMF_guess)+'-epoch49'))
-        CMF_model.load_state_dict(torch.load('./Models/'+str(self.dataset)+'-'+str(self.type)+'/CMF-k-'+str(self.CMF_k)+'-'+str(self.CMF_guess)+'-earlystop'))
+        # 选择对应折的预训练模型
+        if self.use_kfold:
+            cmf_model_path = './Models/{ds}-{tp}/folds-{nf}/seed-{sd}/fold-{fi}/CMF-k-{k}-{g}-earlystop'.format(
+                ds=str(self.dataset), tp=str(self.type), nf=self.n_folds, sd=self.fold_seed, fi=self.fold_id,
+                k=str(self.CMF_k), g=str(self.CMF_guess))
+        else:
+            cmf_model_path = './Models/'+str(self.dataset)+'-'+str(self.type)+'/CMF-k-'+str(self.CMF_k)+'-'+str(self.CMF_guess)+'-earlystop'
+        CMF_model.load_state_dict(torch.load(cmf_model_path))
 
         self.pre_train_output = []     #经过裁剪的CMF预测的知识层面做出题目的概率
         self.user_final_state = {}     #学习者最后一个时刻的知识掌握情况
@@ -269,9 +293,14 @@ class GMF_BOOSTING:
             AUC = roc_auc_score(test_correct, test_pred)
             if AUC > self.bestAUC:
                 self.bestAUC = AUC
-                save_path_k = './Models/' + str(self.dataset) + '-' + str(self.type) + '/GMF-boosting-' + str(
-                    self.combine) + '-' + str(
-                    self.embedding_k) + '-earlystop'
+                if self.use_kfold:
+                    save_dir = './Models/{ds}-{tp}/folds-{nf}/seed-{sd}/fold-{fi}'.format(
+                        ds=str(self.dataset), tp=str(self.type), nf=self.n_folds, sd=self.fold_seed, fi=self.fold_id)
+                else:
+                    save_dir = './Models/' + str(self.dataset) + '-' + str(self.type)
+                if not os.path.exists(save_dir):
+                    os.makedirs(save_dir, exist_ok=True)
+                save_path_k = save_dir + '/GMF-boosting-' + str(self.combine) + '-' + str(self.embedding_k) + '-earlystop'
                 torch.save(self.model.state_dict(), save_path_k)
                 stop = 0
             if ACC > self.bestACC:
