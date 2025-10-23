@@ -98,14 +98,14 @@ class CMF:
             self.train_users.append(user)
             self.train_itemsq.append(torch.tensor(train_sequences[user][0]).squeeze(0))
             self.train_correctsq.append(torch.tensor(train_sequences[user][1]).squeeze(0).long())
-            self.train_itemsq_length.append(train_sequences[user][0].__len__())
+            self.train_itemsq_length.append(len(train_sequences[user][0]))
         self.train_itemsq_length = torch.tensor(self.train_itemsq_length)
 
         self.test_sets = torch.tensor(test_triplet).long().to(self.device)
         self.test_users = list(set(self.test_sets[:,0].tolist()))
 
         # 训练的index
-        self.train_index = torch.arange(0, self.train_users.__len__(), 1)
+        self.train_index = torch.arange(0, len(self.train_users), 1)
 
 
     def train(self):
@@ -142,11 +142,12 @@ class CMF:
             # for ii,index in enumerate(train_data_loader):
             # for index in tqdm(train_data_loader):
             for index in train_data_loader:
+                # 获取该index对应的user
                 user = self.train_users[index]
+                # 先获取该用户的item序列和correct序列
                 itemsq = self.train_itemsq[index].to(self.device)
                 correctsq = self.train_correctsq[index].to(self.device)
-                itemsq_length = self.train_itemsq_length[index]
-                itemsq.to(self.device)
+                # 再将该用户的item序列和correct序列输入模型，得到预测结果
                 user_k,_,_ = self.K_CMF.forward(user,itemsq)
                 item_q = self.Q_matrix[itemsq, :]
                 item_k = self.K_CMF.item_k[itemsq,:]
@@ -176,7 +177,7 @@ class CMF:
 
             self.K_CMF.eval()
 
-            test_user_state_k = []
+            test_user_state_dict = {}
             # get the state of each user
             for test_index in range(self.test_users.__len__()):
                 test_user = self.test_users[test_index]
@@ -184,15 +185,16 @@ class CMF:
                 train_index_itemsq = self.train_itemsq[train_index].to(self.device)
                 train_model_output_k,_,_ = self.K_CMF.forward(train_index,train_index_itemsq)
                 test_out_k = train_model_output_k[-1,:]
-                test_user_state_k.append(test_out_k.unsqueeze(0))
+                test_user_state_dict[test_user] = test_out_k
 
-            test_user_state_k = torch.cat(test_user_state_k,0)
-
-            user_states_k = test_user_state_k[self.test_sets[:,0],:]
+            # Map test set user IDs to their knowledge states
+            user_states_k_list = []
+            for user_id in self.test_sets[:,0].tolist():
+                user_states_k_list.append(test_user_state_dict[user_id].unsqueeze(0))
+            user_states_k = torch.cat(user_states_k_list, 0)
             item_states_q = self.Q_matrix[self.test_sets[:,1],:]
             item_state_k = self.K_CMF.item_k[self.test_sets[:,1],:]
             pred = IRT_2(user_states_k,item_state_k,item_states_q,self.guess)
-            # print(pred.detach().cpu().numpy())
 
             test_pred_collect = pred.detach().cpu().numpy()
             test_pred01_collect = pred.ge(0.5).float().detach().cpu().numpy()
