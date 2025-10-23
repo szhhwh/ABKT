@@ -50,6 +50,7 @@ def load_dataset(dataset,type,min_length):
 
     #统计用户序列长度
     user_count = {}
+    # user_count 是一个字典，[user_id] = length
     for i in range(data_raw[0].__len__()):
         userid = data_raw[0][i]
         if user_count.__contains__(userid):
@@ -60,21 +61,23 @@ def load_dataset(dataset,type,min_length):
     user_id = {}
     item_id = {}
     skill_id = {}
-    user_list_filtered = []
-    item_list_filtered = []
-    correct_list_filtered = []
-    filtered_Q_matrix = []
+    user_list_filtered = [] # 用户列表
+    item_list_filtered = [] # 题目列表
+    correct_list_filtered = [] # 正确与否列表
+    filtered_Q_matrix = [] # 每个题目对应的技能列表
     print('Filting data where sequence length>=',min_length)
+    # 每一行为[user_id，problem_id，correct，skill_id]
     for i in range(data_raw[0].__len__()):
         user = data_raw[0][i]
         item = data_raw[1][i]
         correct = data_raw[2][i]
+        # 分割技能ID
         if dataset == 'ASSISTment2009':
             skillids = data_raw[3][i].split(',')
         else:
             skillids = data_raw[3][i].split('~~')
 
-        if user_count[user] >= min_length:
+        if user_count[user] >= min_length: # 过滤最小序列长度
             if not user_id.__contains__(user):
                 user_id[user] = user_id.__len__()
             if not item_id.__contains__(item):
@@ -166,6 +169,15 @@ def get_kfold_sequences(dataset, type, min_length, n_splits=5, fold_id=0, seed=4
 
     (user_num, item_num, skill_num, record_num, train_sequences, test_triplet, Q_matrix)
     """
+    # user_list：用户列表
+    # item_list：题目列表
+    # correct_list：正确与否列表
+    # Q_matrix：题目-技能对应表
+    # Q_matrix = [
+    #     [0, 2],      # 题目0涉及技能0和2
+    #     [1],         # 题目1仅涉及技能1
+    #     [0, 1, 3]    # 题目2涉及技能0、1、3
+    # ]
     [user_list, item_list, correct_list, Q_matrix] = load_dataset(dataset, type, min_length)
     user_num = max(user_list) + 1
     item_num = max(item_list) + 1
@@ -203,8 +215,8 @@ def get_kfold_sequences(dataset, type, min_length, n_splits=5, fold_id=0, seed=4
     train_sequences = {}
     test_triplet = []
 
-    # 构建训练与测试
-    for u in train_users:
+    # 构建训练与测试集
+    for u in unique_users:
         items = all_sequences[u][0]
         labels = all_sequences[u][1]
         seq_len = len(items)

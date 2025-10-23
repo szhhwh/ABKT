@@ -109,7 +109,7 @@ class CMF:
 
 
     def train(self):
-        print('*' * 20, 'start training', '*' * 20)
+        print('*' * 20, 'start training CMF', '*' * 20)
         train_data_loader = Data.DataLoader(
             dataset=self.train_index,
             batch_size=1,
@@ -141,7 +141,7 @@ class CMF:
             train_correct_all = []
             # for ii,index in enumerate(train_data_loader):
             # for index in tqdm(train_data_loader):
-            for index in train_data_loader:
+            for index in tqdm(train_data_loader):
                 # 获取该index对应的user
                 user = self.train_users[index]
                 # 先获取该用户的item序列和correct序列
@@ -179,7 +179,7 @@ class CMF:
 
             test_user_state_dict = {}
             # get the state of each user
-            for test_index in range(self.test_users.__len__()):
+            for test_index in tqdm(range(len(self.test_users))):
                 test_user = self.test_users[test_index]
                 train_index = self.train_users.index(test_user)
                 train_index_itemsq = self.train_itemsq[train_index].to(self.device)

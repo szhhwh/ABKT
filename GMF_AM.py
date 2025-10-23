@@ -22,6 +22,7 @@ from sklearn.metrics import roc_auc_score,accuracy_score
 from PytorchModels import K_CMF, GMF, IRT_2
 import numpy as np
 from scipy import sparse
+from tqdm import tqdm
 
 class GMF_BOOSTING:
     def __init__(self,
@@ -165,12 +166,10 @@ class GMF_BOOSTING:
             self.pre_train_output.append(clip_pred.detach())
             self.user_final_state[user] = user_k[-1,:].detach().unsqueeze(0)
         print('Testing set...')
-        test_user_state_k = []
-        # get the state of each user
-        for test_index in range(self.test_users.__len__()):
-            test_user = self.test_users[test_index]
-            test_user_state_k.append(self.user_final_state[test_user])
-        user_states_k = torch.cat(test_user_state_k, 0)
+        user_states_k_list = []
+        for user_id in self.test_sets[:, 0].tolist():
+            user_states_k_list.append(self.user_final_state[user_id])
+        user_states_k = torch.cat(user_states_k_list, 0)
         item_states_q = self.Q_matrix[self.test_sets[:, 1], :]
         item_state_k = CMF_model.item_k[self.test_sets[:, 1], :]
         pred_test = IRT_2(user_states_k, item_state_k, item_states_q, self.CMF_guess).detach()
@@ -224,7 +223,7 @@ class GMF_BOOSTING:
 
 
     def train(self):
-        print('*'*20,'start training','*'*20)
+        print('*'*20,'start training GMF','*'*20)
         y = self.train_sets[:,2]
         k = self.train_sets[:,3]
         g = y/k-(1-y)/(1-k)
@@ -246,7 +245,7 @@ class GMF_BOOSTING:
             self.model.train()
             loss = 0
             l2_loss = 0
-            for batch_idx, batch in enumerate(train_data_loader):
+            for batch in tqdm(train_data_loader):
                 optimizer.zero_grad()
                 batch_num = batch.shape[0]
                 u_idx = batch[:,0].long()
